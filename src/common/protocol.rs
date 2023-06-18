@@ -1,63 +1,58 @@
-use std::{net::TcpStream, net::UdpSocket, io::{Write, Read, self}};
-
-pub struct Protocol {
-	pub transfer : Box<dyn Socket>,
-}
-
-impl Protocol {
-	pub fn new_tcp(host: String) -> Option<Self> {
-		match TcpStream::connect(host) {
-			Ok(tcp) => { 
-				tcp.set_nonblocking(true);
-				
-				Some(Self { transfer : Box::new(Tcp::new(tcp)) })
-			},
-			Err(e) => { eprintln!("{}:?", e); None }
-		}
-	}
-
-	pub fn new_udp(host: String) -> Option<Self> {
-		match UdpSocket::bind(host) {
-			Ok(udp) => { Some(Self { transfer : Box::new(Udp::new(udp)) })},
-			Err(e) => { eprintln!("{}:?", e); None }
-		}
-	}
-}
+use std::{
+    io::{self, Read, Write},
+    net::TcpStream,
+};
 
 pub struct Tcp {
-	stream: TcpStream
+    stream: Option<TcpStream>,
 }
 
-pub struct Udp {
-	socket: UdpSocket
+pub trait Protocol {
+    fn new(host: String) -> Self;
+    fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize>;
+    fn send(&mut self, buf: &[u8]) -> usize;
+    fn set_nonblocking(&mut self, nonblocking: bool);
 }
 
-impl Tcp {
-	pub fn new(stream: TcpStream) -> Self {
-		Self { stream }
-	 }
-}
+impl Protocol for Tcp {
+    fn new(host: String) -> Self {
+        match TcpStream::connect(host) {
+            Ok(tcp) => {
+                let mut ret = Self { stream: Some(tcp) };
+                ret.set_nonblocking(true);
 
-impl Udp {
-	pub fn new(socket: UdpSocket) -> Self {
-		Self { socket }
-	 }
-}
+                ret
+            }
+            Err(e) => {
+                eprintln!("{}:?", e);
 
-pub trait Socket {
-	fn recv(&mut self, buf: &mut[u8]) -> io::Result<usize>;
-	fn send(&mut self, buf: &[u8]) -> io::Result<usize>;
-	fn set_nonblocking(&mut self, nonblocking: bool);
-}
+                Self { stream: None }
+            }
+        }
+    }
 
-impl Socket for Tcp {
-	fn recv(&mut self, buf: &mut[u8]) -> io::Result<usize> { self.stream.read(buf) }
-	fn send(&mut self, buf: &[u8]) -> io::Result<usize> { self.stream.write(buf) }
-	fn set_nonblocking(&mut self, nonblocking: bool) { self.stream.set_nonblocking(nonblocking); }
-}
+    fn recv(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.stream {
+            Some(ref mut stream) => stream.read(buf),
+            None => Ok(0),
+        }
+    }
 
-impl Socket for Udp {
-	fn recv(&mut self, buf: &mut[u8]) -> io::Result<usize> { Ok(self.socket.recv_from(buf).expect("Failed to receive data.").0) }
-	fn send(&mut self, buf: &[u8]) -> io::Result<usize> { self.socket.send(buf) }
-	fn set_nonblocking(&mut self, nonblocking: bool) { self.socket.set_nonblocking(nonblocking); }
+    fn send(&mut self, buf: &[u8]) -> usize {
+        if let Some(ref mut stream) = self.stream {
+            if let Ok(num_bytes) = stream.write(buf) {
+                return num_bytes
+            }
+        }
+
+        return 0;
+    }
+
+    fn set_nonblocking(&mut self, nonblocking: bool) {
+        if let Some(ref mut stream) = self.stream {
+            if let Err(_) = stream.set_nonblocking(nonblocking) {
+                eprintln!("Unable to set stream to non-blocking.")
+            }
+        }
+    }
 }

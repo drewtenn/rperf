@@ -1,11 +1,11 @@
 use std::sync::mpsc;
 
 use super::Message;
-use super::protocol::Protocol;
+use super::protocol::{Tcp};
 use super::stream::Stream;
 
 pub struct Test {
-	pub control_channel: Option<Protocol>,
+	pub control_channel: Option<Tcp>,
 	pub stream: Option<Stream>,
 	pub is_started: bool,
 	pub is_running: bool,

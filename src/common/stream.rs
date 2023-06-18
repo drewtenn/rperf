@@ -1,48 +1,44 @@
-use std::{thread::{self}, time::Instant};
+use std::{
+    thread::{self},
+    time::Instant, sync::{Arc, Mutex},
+};
 
-use super::{protocol::Protocol, connect, test::Test, Message};
+use timer::Timer;
 
-#[derive(Default)]
-pub struct Stream {
-    pub protocol: Option<Protocol>,
-}
+use super::{connect, protocol::Protocol, test::Test, Message};
+
+pub struct Stream;
 
 impl Stream {
-    pub fn new() -> Self {
-        Self { protocol: None }
-    }
-
-    pub fn start(test: &Test, host: String) {
+    pub fn start<T>(test: &Test, host: String)
+    where
+        T: Protocol
+    {
         let tx = test.tx_channel.clone();
 
         thread::spawn(move || {
-            let mut stream = Stream::new();
+            let now = Instant::now();
+            let tx_buffer = vec![1; 100000].into_boxed_slice();
+            let mut stream: T = connect(host);
 
-            if let Some(protocol) = connect(host) {
-                stream.protocol = Some(protocol);
+            let total_bytes = Arc::new(Mutex::new(0));
+            let tb = total_bytes.clone();
 
-                let now = Instant::now();
+            let timer = Timer::new();
+            let _guard = timer.schedule_repeating(chrono::Duration::milliseconds(1000), move|| {
+                println!("{}", *tb.lock().unwrap());
+            });
+    
+            loop {
+                *total_bytes.lock().unwrap() += stream.send(&tx_buffer);
 
-                let tx_buffer = vec![1; 100_000_000].into_boxed_slice();
-
-                loop {
-                    stream.send_data(&tx_buffer);
-
-                    if now.elapsed().as_millis() >= 5000 {
-                        tx.send(Message::TestEnd);
-                        break;
+                if now.elapsed().as_millis() >= 5000 {
+                    if let Err(e) = tx.send(Message::TestEnd) {
+                        eprintln!("{:?}", e)
                     }
+                    break;
                 }
             }
         });
-    }
-
-    pub fn send_data(&mut self, buf: &[u8]) {
-        if let Some(ref mut protocol) = self.protocol {
-
-            if let Ok(bytes) = protocol.transfer.send(buf) {
-                //println!("{} bytes sent", bytes);
-            }
-        }
     }
 }

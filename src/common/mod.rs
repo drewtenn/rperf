@@ -3,9 +3,9 @@ use num_enum::TryFromPrimitive;
 use self::protocol::Protocol;
 
 pub mod protocol;
+pub mod stream;
 pub mod test;
 pub mod timer;
-pub mod stream;
 
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
 #[repr(i8)]
@@ -30,18 +30,15 @@ pub enum Message {
     ServerError = -2,
 }
 
-pub fn connect(host: String) -> Option<Protocol> {
-    match Protocol::new_tcp(host) {
-        Some(mut protocol) => {
-            send_cookie(&mut protocol);
+pub fn connect<T>(host: String) -> T
+where
+    T: Protocol,
+{
+    let mut tcp = T::new(host);
 
-            Some(protocol)
-        }
-        None => None,
-    }
-}
-
-fn send_cookie(protocol: &mut Protocol) {
     let cookie = "Aj6ard5dsxid53kuwtvayyfi5mfe2g6jpxmq\0";
-    protocol.transfer.send(cookie.as_bytes());
+
+    tcp.send(cookie.as_bytes());
+
+    tcp
 }
